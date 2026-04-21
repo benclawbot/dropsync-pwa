@@ -2,14 +2,17 @@
   "name": "DropSync",
   "short_name": "DropSync",
   "description": "2-way sync between a local Android folder and Dropbox",
-  "start_url": "/",
+  "start_url": "https://benclawbot.github.io/dropsync-pwa/",
   "display": "standalone",
   "background_color": "#0c0c0e",
   "theme_color": "#0c0c0e",
   "orientation": "portrait-primary",
   "scope": "/",
   "lang": "en",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='48' fill='%230c0c0e'/><path d='M48 72l32 32-32 32M96 136h48M144 72l-32 32 32 32' stroke='%237c5cff' stroke-width='12' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>",

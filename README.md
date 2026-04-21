@@ -40,7 +40,7 @@ npx serve .
 3. Give it any name (e.g. "My DropSync")
 4. In the app's **Settings**, find **OAuth2 Redirect URIs** and add:
    ```
-   https://your-domain.com/
+   https://benclawbot.github.io/dropsync-pwa/
    ```
    (Replace with your actual deployed URL — no path needed, the root is fine)
 5. Copy the **App Key**
