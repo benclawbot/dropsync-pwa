@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0c0c0e">
+  <meta name="description" content="2-way sync between a local Android folder and Dropbox">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>DropSync</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230c0c0e'/><path d='M8 12l4 4-4 4M16 20h8M24 12l-4 4 4 4' stroke='%237c5cff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0c0e;
+      --surface: #16161a;
+      --surface-el: #1e1e24;
+      --border: #2a2a32;
+      --text: #e8e8ed;
+      --text-2: #8b8b96;
+      --accent: #7c5cff;
+      --accent-dim: rgba(124,92,255,0.15);
+      --success: #3ecf8e;
+      --warning: #f5a623;
+      --error: #ef4444;
+      --dropbox: #0061fe;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', system-ui, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      overflow-x: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Layout ── */
+    .app {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: 0 16px 32px;
+    }
+
+    /* ── Header ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(12,12,14,0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 -16px;
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      color: var(--text);
+    }
+
+    .logo svg { flex-shrink: 0; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ── Status Dot ── */
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-2);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.syncing {
+      background: var(--accent);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    .status-dot.synced { background: var(--success); }
+    .status-dot.warn { background: var(--warning); }
+    .status-dot.error { background: var(--error); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    /* ── Dropbox chip ── */
+    .dbx-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .dbx-chip:hover { border-color: var(--dropbox); background: rgba(0,97,254,0.08); }
+    .dbx-chip.connected { color: var(--text); border-color: rgba(0,97,254,0.4); }
+    .dbx-chip .dbx-avatar {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--dropbox);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 600; color: #fff;
+      flex-shrink: 0;
+    }
+    .dbx-chip .chevron { font-size: 10px; color: var(--text-2); }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+      text-decoration: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: #6a4de0; }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-dim); }
+    .btn-danger {
+      background: rgba(239,68,68,0.15);
+      color: var(--error);
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+    .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.25); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-2);
+      padding: 6px 10px;
+    }
+    .btn-ghost:hover { color: var(--text); background: var(--surface); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn-icon {
+      padding: 6px;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      border: none;
+      color: var(--text-2);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .btn-icon:hover { color: var(--text); background: var(--surface); }
+
+    /* ── Folder Cards ── */
+    .folder-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .folder-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.2s;
+    }
+    .folder-card.active { border-color: rgba(124,92,255,0.4); }
+
+    .folder-card-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      color: var(--text-2);
+      text-transform: uppercase;
+    }
+
+    .folder-card-body {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .folder-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      background: var(--surface-el);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-2);
+    }
+
+    .folder-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .folder-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .folder-path {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .folder-empty {
+      font-size: 13px;
+      color: var(--text-2);
+      font-style: italic;
+    }
+
+    .folder-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── Options ── */
+    .options-section {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .options-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      color: var(--text-2);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .radio-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 3px;
+    }
+
+    .radio-option {
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+      background: transparent;
+      font-family: var(--sans);
+    }
+    .radio-option:hover { color: var(--text); }
+    .radio-option.selected {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Action Bar ── */
+    .action-bar {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .action-bar .btn-primary {
+      flex: 1;
+      padding: 12px;
+      font-size: 14px;
+    }
+
+    /* ── Sync Status ── */
+    .sync-status {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+
+    .sync-status .label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sync-count {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Activity Log ── */
+    .log-section {
+      margin-top: 24px;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .log-header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      color: var(--text-2);
+      text-transform: uppercase;
+    }
+
+    .log-badge {
+      background: var(--surface-el);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 10px;
+      color: var(--text-2);
+      font-family: var(--mono);
+    }
+
+    .log-body {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.3s ease;
+    }
+    .log-body.open { max-height: 320px; }
+
+    .log-scroll {
+      overflow-y: auto;
+      max-height: 300px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 0;
+    }
+
+    .log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      animation: logIn 0.2s ease-out;
+      cursor: default;
+    }
+    .log-entry:hover { background: var(--surface); }
+    @keyframes logIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-icon { flex-shrink: 0; margin-top: 1px; }
+    .log-icon.up { color: var(--accent); }
+    .log-icon.down { color: var(--success); }
+    .log-icon.conflict { color: var(--warning); }
+    .log-icon.ok { color: var(--text-2); }
+    .log-icon.err { color: var(--error); }
+
+    .log-time {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-2);
+      flex-shrink: 0;
+      min-width: 52px;
+    }
+
+    .log-path {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .log-relative {
+      font-size: 10px;
+      color: var(--text-2);
+      flex-shrink: 0;
+    }
+
+    .log-empty {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-2);
+      font-size: 12px;
+    }
+
+    /* ── Error Banner ── */
+    .error-banner {
+      margin-top: 16px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--error);
+      animation: logIn 0.2s ease-out;
+    }
+    .error-banner.hidden { display: none; }
+    .error-banner button {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--error);
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: var(--surface-el);
+      border: 1px solid var(--border);
+      border-radius: 16px 16px 0 0;
+      width: 100%;
+      max-width: 500px;
+      max-height: 80dvh;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(20px);
+      transition: transform 0.25s ease-out;
+    }
+    .modal-overlay.open .modal { transform: translateY(0); }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .modal-breadcrumb {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-2);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .modal-breadcrumb::-webkit-scrollbar { height: 0; }
+    .breadcrumb-sep { color: var(--border); }
+    .breadcrumb-item {
+      color: var(--accent);
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .breadcrumb-item:hover { text-decoration: underline; }
+
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      flex-shrink: 0;
+    }
+
+    /* ── File browser rows ── */
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .file-row:hover { background: var(--surface); }
+    .file-row.file-only { cursor: default; }
+    .file-row.file-only:hover { background: transparent; }
+
+    .file-row-icon {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .file-row-icon.folder { background: var(--accent-dim); color: var(--accent); }
+    .file-row-icon.file { background: var(--surface-el); color: var(--text-2); }
+
+    .file-row-info { flex: 1; min-width: 0; }
+    .file-row-name {
+      font-size: 13px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-row-meta {
+      font-size: 11px;
+      color: var(--text-2);
+      margin-top: 2px;
+    }
+
+    .file-row-arrow {
+      color: var(--text-2);
+      flex-shrink: 0;
+    }
+
+    .load-more {
+      padding: 14px;
+      text-align: center;
+    }
+
+    /* ── Skeleton ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-el) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .skeleton-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+    }
+    .skeleton-icon { width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0; }
+    .skeleton-text { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+    .skeleton-line { height: 10px; border-radius: 3px; }
+
+    /* ── Auth screen ── */
+    .auth-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      min-height: 300px;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .auth-screen h2 { font-size: 20px; font-weight: 600; }
+    .auth-screen p { font-size: 13px; color: var(--text-2); max-width: 300px; line-height: 1.6; }
+    .auth-screen .dropbox-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--dropbox);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      font-size: 14px;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .auth-screen .dropbox-btn:hover { background: #004dcc; }
+
+    /* ── Info notice ── */
+    .info-notice {
+      margin-top: 20px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(124,92,255,0.25);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+    .info-notice strong { color: var(--text); }
+
+    /* ── Footer ── */
+    .app-footer {
+      margin-top: auto;
+      padding-top: 24px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    /* ── Utilities ── */
+    .hidden { display: none !important; }
+    .flex-1 { flex: 1; }
+    .text-muted { color: var(--text-2); }
+  </style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="7" fill="#16161a"/>
+        <path d="M7 11l3.5 3.5L7 18M14 18h7M21 11l-3.5 3.5L21 18" stroke="#7c5cff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      DropSync
+    </div>
+    <div class="header-right">
+      <div class="status-dot" id="statusDot" title="Idle"></div>
+      <div id="dbxChip" class="dbx-chip" onclick="handleDbxChipClick()">
+        <span class="spinner hidden" id="dbxSpinner"></span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" id="dbxIcon">
+          <path d="M12 2L4 7l8 5 8-5-8-5zM4 12l8 5 8-5M4 17l8 5 8-5" stroke="#0061fe" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span id="dbxLabel">Connect</span>
+        <span class="chevron" id="dbxChevron">▾</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Error Banner ── -->
+  <div class="error-banner hidden" id="errorBanner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:1px">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M12 7v6M12 17h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span id="errorMessage">An error occurred.</span>
+    <button onclick="dismissError()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+
+  <!-- ── Folder Cards ── -->
+  <div class="folder-cards">
+
+    <!-- Dropbox Folder -->
+    <div class="folder-card" id="dropboxCard">
+      <div class="folder-card-label">Dropbox Folder</div>
+      <div class="folder-card-body">
+        <div class="folder-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L4 7l8 5 8-5-8-5zM4 12l8 5 8-5M4 17l8 5 8-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="folder-info">
+          <div class="folder-name" id="dropboxFolderName">
+            <span class="folder-empty">No folder selected</span>
+          </div>
+          <div class="folder-path" id="dropboxFolderPath"></div>
+        </div>
+        <div class="folder-actions">
+          <button class="btn btn-secondary btn-sm" id="browseDropboxBtn" onclick="openDropboxBrowser()" disabled>
+            Browse
+          </button>
+          <button class="btn-icon hidden" id="clearDropboxBtn" onclick="clearDropboxFolder()" title="Change folder">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Local Folder -->
+    <div class="folder-card" id="localCard">
+      <div class="folder-card-label">Local Folder</div>
+      <div class="folder-card-body">
+        <div class="folder-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M3 7v13a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7l-2-2H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="folder-info">
+          <div class="folder-name" id="localFolderName">
+            <span class="folder-empty">No folder selected</span>
+          </div>
+          <div class="folder-path" id="localFolderPath"></div>
+        </div>
+        <div class="folder-actions">
+          <button class="btn btn-secondary btn-sm" id="selectLocalBtn" onclick="selectLocalFolder()">
+            Select
+          </button>
+          <button class="btn-icon hidden" id="clearLocalBtn" onclick="clearLocalFolder()" title="Change folder">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Options ── -->
+  <div class="options-section">
+    <span class="options-title">File Filter</span>
+    <div class="radio-group" id="fileFilterGroup">
+      <button class="radio-option selected" data-value="all" onclick="setFileFilter('all')">All files</button>
+      <button class="radio-option" data-value="md" onclick="setFileFilter('md')">Markdown only</button>
+    </div>
+  </div>
+
+  <!-- ── Action Bar ── -->
+  <div class="action-bar">
+    <button class="btn btn-primary" id="syncBtn" onclick="toggleSync()" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" id="syncBtnIcon">
+        <path d="M4 12a8 8 0 018-8c2.76 0 5.26 1.4 6.77 3.65M20 12a8 8 0 01-8 8c-2.76 0-5.26-1.4-6.77-3.65" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M16 4l4 4-4 4M8 20l-4-4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span id="syncBtnLabel">Start Sync</span>
+    </button>
+    <button class="btn btn-secondary hidden" id="syncNowBtn" onclick="triggerManualSync()" title="Sync now">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+        <path d="M4 12a8 8 0 018-8c2.76 0 5.26 1.4 6.77 3.65M20 12a8 8 0 01-8 8c-2.76 0-5.26-1.4-6.77-3.65" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M16 4l4 4-4 4M8 20l-4-4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Sync Status ── -->
+  <div class="sync-status hidden" id="syncStatusBar">
+    <div class="label">
+      <div class="spinner" id="syncSpinner" style="display:none"></div>
+      <span id="syncStatusLabel">Syncing…</span>
+    </div>
+    <span class="sync-count" id="syncCount"></span>
+  </div>
+
+  <!-- ── Activity Log ── -->
+  <div class="log-section">
+    <div class="log-header" onclick="toggleLog()">
+      <div class="log-header-left">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Activity Log
+        <span class="log-badge" id="logBadge">0</span>
+      </div>
+      <button class="btn-icon" onclick="event.stopPropagation(); clearLog()" title="Clear log">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M5 6l1 14h12l1-14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" id="logChevron" style="color:var(--text-2);transition:transform 0.2s">
+        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="log-body" id="logBody">
+      <div class="log-scroll" id="logScroll">
+        <div class="log-empty" id="logEmpty">No sync activity yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Info Notice ── -->
+  <div class="info-notice" id="infoNotice">
+    <strong>How it works:</strong> DropSync uses your browser's File System Access API to read and write files directly in your local folder, and the Dropbox API to communicate with your Dropbox. All sync logic runs locally in your browser — no server involved. Grant folder access when prompted.
+  </div>
+
+  <div class="app-footer">
+    Open-source PWA · No server · Your data stays on your device
+  </div>
+
+</div>
+
+<!-- ── Dropbox Browser Modal ── -->
+<div class="modal-overlay" id="dropboxBrowserModal" onclick="closeDropboxBrowser(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-title">Select Dropbox Folder</span>
+      <button class="btn-icon" onclick="closeDropboxBrowser()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="modal-breadcrumb" id="dbxBreadcrumb"></div>
+    <div class="modal-body" id="dbxBrowserBody">
+      <!-- populated dynamically -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDropboxBrowser()">Cancel</button>
+      <button class="btn btn-primary" id="dbxSelectBtn" onclick="confirmDropboxFolder()" disabled>Select This Folder</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────
+const DBX_APP_KEY = 'YOUR_DROPBOX_APP_KEY'; // <-- Replace with your Dropbox App Key
+const DBX_REDIRECT_URI = window.location.origin + window.location.pathname;
+const DBX_AUTH_URL = 'https://www.dropbox.com/oauth2/authorize';
+const DBX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
+const DBX_API = 'https://api.dropboxapi.com/2';
+const DBX_CONTENT_API = 'https://content.dropboxapi.com/2';
+const DBX_SCOPES = 'files.content.read files.content.write files.metadata.read';
+
+// ─────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────
+const state = {
+  dbxToken: null,
+  dbxAccount: null,
+  dbxAccessTokenExpiry: null, // ms timestamp
+  localHandle: null,          // FileSystemDirectoryHandle
+  localFolder: null,           // { name, path }
+  dropboxFolder: null,         // { name, path }
+  fileFilter: 'all',           // 'all' | 'md'
+  syncActive: false,
+  syncWatcher: null,          // interval id
+  lastSyncTime: null,
+  syncCount: 0,
+  dbxCursor: null,             // for list_folder continue
+  dbxHasMore: false,
+  dbxCurrentPath: '',
+  logEntries: [],
+  manifest: {},                // path -> { server_modified, localModified, size, hash }
+};
+
+// ─────────────────────────────────────────────────────────
+// INDEXED DB (manifests + logs)
+// ─────────────────────────────────────────────────────────
+function openDB(name, version, stores) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(name, version);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      stores.forEach(([store, keyPath, indexes]) => {
+        if (!db.objectStoreNames.contains(store)) {
+          const s = db.createObjectStore(store, { keyPath });
+          (indexes || []).forEach(([idx, multi]) => s.createIndex(idx, idx, { multi }));
+        }
+      });
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function dbGet(dbName, store, key) {
+  const db = await openDB(dbName, 1, [[store, 'id']]);
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+async function dbPut(dbName, store, value) {
+  const db = await openDB(dbName, 1, [[store, 'id']]);
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(value);
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+async function dbDelete(dbName, store, key) {
+  const db = await openDB(dbName, 1, [[store, 'id']]);
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
+  });
+}
+
+async function dbGetAll(dbName, store) {
+  const db = await openDB(dbName, 1, [[store, 'id']]);
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────
+function fmt(date) {
+  return date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+function relTime(ms) {
+  if (!ms) return '';
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+function isMD(path) { return path.endsWith('.md'); }
+function matchesFilter(path) { return state.fileFilter === 'all' || isMD(path); }
+function hashBuf(buf) {
+  return crypto.subtle.digest('SHA-256', buf).then(h => {
+    const arr = new Uint8Array(h);
+    return Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('').slice(0, 16);
+  });
+}
+async function fileHash(f) {
+  const buf = await f.arrayBuffer();
+  return hashBuf(buf);
+}
+async function saveManifest() {
+  const key = manifestKey();
+  if (!key) return;
+  await dbPut('dropsync-manifests', 'manifests', { id: key, ...state.manifest, _saved: Date.now() });
+}
+async function loadManifest() {
+  const key = manifestKey();
+  if (!key) return;
+  const m = await dbGet('dropsync-manifests', 'manifests', key);
+  if (m) {
+    delete m.id; delete m._saved;
+    state.manifest = m;
+  }
+}
+function manifestKey() {
+  if (!state.localFolder || !state.dropboxFolder) return null;
+  return `${state.localFolder.path}::${state.dropboxFolder.path}`;
+}
+function setStatus(cls, label) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + (cls || '');
+  dot.title = label || '';
+}
+function showError(msg) {
+  const b = document.getElementById('errorBanner');
+  document.getElementById('errorMessage').textContent = msg;
+  b.classList.remove('hidden');
+}
+function dismissError() {
+  document.getElementById('errorBanner').classList.add('hidden');
+}
+function setSyncUI() {
+  const btn = document.getElementById('syncBtn');
+  const label = document.getElementById('syncBtnLabel');
+  const icon = document.getElementById('syncBtnIcon');
+  const nowBtn = document.getElementById('syncNowBtn');
+  const statusBar = document.getElementById('syncStatusBar');
+
+  const canSync = state.dbxToken && state.localFolder && state.dropboxFolder;
+
+  if (!canSync) {
+    btn.disabled = true;
+    label.textContent = 'Select both folders';
+    icon.innerHTML = '<path d="M4 12a8 8 0 018-8c2.76 0 5.26 1.4 6.77 3.65M20 12a8 8 0 01-8 8c-2.76 0-5.26-1.4-6.77-3.65" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 4l4 4-4 4M8 20l-4-4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+    nowBtn.classList.add('hidden');
+    statusBar.classList.add('hidden');
+    setStatus('', 'Not configured');
+    return;
+  }
+
+  btn.disabled = false;
+  nowBtn.classList.toggle('hidden', !state.syncActive);
+
+  if (state.syncActive) {
+    btn.className = 'btn btn-danger';
+    label.textContent = 'Stop Sync';
+    icon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="1" stroke="currentColor" stroke-width="1.8"/>';
+    statusBar.classList.remove('hidden');
+    setStatus('syncing', 'Syncing');
+  } else {
+    btn.className = 'btn btn-primary';
+    label.textContent = 'Start Sync';
+    icon.innerHTML = '<path d="M4 12a8 8 0 018-8c2.76 0 5.26 1.4 6.77 3.65M20 12a8 8 0 01-8 8c-2.76 0-5.26-1.4-6.77-3.65" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 4l4 4-4 4M8 20l-4-4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>';
+    statusBar.classList.add('hidden');
+    setStatus('synced', 'Watching');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// DROPBOX OAUTH (PKCE)
+// ─────────────────────────────────────────────────────────
+function genPKCE() {
+  const verifier = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+    .then(h => btoa(String.fromCharCode(...new Uint8Array(h))))
+    .then(s => s.replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'').slice(0,43))
+    .then(encoded => ({ verifier, challenge: encoded }));
+}
+
+async function startDbxAuth() {
+  dismissError();
+  const appKey = getDbxAppKey();
+  if (!appKey || appKey === 'YOUR_DROPBOX_APP_KEY') {
+    const key = promptDbxAppKey();
+    if (!key || key === 'YOUR_DROPBOX_APP_KEY') {
+      showError('A Dropbox App Key is required. Tap "Connect" to set it up.');
+      return;
+    }
+  }
+  const { verifier, challenge } = await genPKCE();
+  sessionStorage.setItem('pkce_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id: appKey || getDbxAppKey(),
+    response_type: 'code',
+    redirect_uri: DBX_REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    token_access_type: 'offline',
+  });
+  window.location.href = `${DBX_AUTH_URL}?${params}`;
+}
+
+async function handleDbxCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  if (error) { showError(`Dropbox auth error: ${error}`); return; }
+  if (!code) return; // Not a callback
+  history.replaceState({}, '', window.location.pathname);
+
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  if (!verifier) { showError('PKCE verifier missing. Please try again.'); return; }
+  sessionStorage.removeItem('pkce_verifier');
+
+  try {
+    const res = await fetch(DBX_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: DBX_REDIRECT_URI,
+        client_id: DBX_APP_KEY,
+        code_verifier: verifier,
+      }),
+    });
+    if (!res.ok) throw new Error(`Token error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    state.dbxToken = data.access_token;
+    // Dropbox access tokens don't expire by default for the older flow
+    // But we store it anyway
+    localStorage.setItem('dbx_token', data.access_token);
+    if (data.refresh_token) localStorage.setItem('dbx_refresh', data.refresh_token);
+    state.dbxAccessTokenExpiry = Date.now() + (data.expires_in ? data.expires_in * 1000 : 86400000);
+    await fetchDbxAccount();
+  } catch(e) {
+    showError('Authentication failed: ' + e.message);
+  }
+}
+
+async function fetchDbxAccount() {
+  if (!state.dbxToken) return;
+  try {
+    const res = await fetch(`${DBX_API}/users/get_current_account`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.dbxToken}` },
+    });
+    if (!res.ok) throw new Error(await res.text());
+    state.dbxAccount = await res.json();
+    renderDbxChip();
+    document.getElementById('browseDropboxBtn').disabled = false;
+    addLog('ok', null, 'Connected to Dropbox');
+  } catch(e) {
+    showError('Failed to fetch account: ' + e.message);
+  }
+}
+
+function renderDbxChip() {
+  const label = document.getElementById('dbxLabel');
+  const chip = document.getElementById('dbxChip');
+  if (state.dbxAccount) {
+    const name = state.dbxAccount.name.display_name.split(' ')[0];
+    const initials = state.dbxAccount.name.display_name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+    label.textContent = name;
+    chip.classList.add('connected');
+    const avatar = chip.querySelector('.dbx-avatar') || (() => {
+      const a = document.createElement('span');
+      a.className = 'dbx-avatar';
+      chip.insertBefore(a, chip.firstChild);
+      return a;
+    })();
+    avatar.textContent = initials;
+    chip.querySelector('#dbxIcon')?.remove();
+    chip.querySelector('#dbxChevron')?.remove();
+  } else {
+    label.textContent = 'Connect';
+    chip.classList.remove('connected');
+  }
+}
+
+function handleDbxChipClick() {
+  if (state.dbxToken) {
+    // Toggle disconnect menu
+    if (confirm('Disconnect Dropbox?')) {
+      state.dbxToken = null;
+      state.dbxAccount = null;
+      localStorage.removeItem('dbx_token');
+      localStorage.removeItem('dbx_refresh');
+      renderDbxChip();
+      document.getElementById('browseDropboxBtn').disabled = true;
+      addLog('ok', null, 'Disconnected from Dropbox');
+      setSyncUI();
+    }
+  } else {
+    startDbxAuth();
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// DROPBOX API HELPERS
+// ─────────────────────────────────────────────────────────
+async function dbxRpc(endpoint, body, token) {
+  const t = token || state.dbxToken;
+  const res = await fetch(`${DBX_API}${endpoint}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    showError('Dropbox session expired. Please reconnect.');
+    state.dbxToken = null;
+    localStorage.removeItem('dbx_token');
+    renderDbxChip();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function dbxContent(endpoint, dropboxApiArg, body, token) {
+  const t = token || state.dbxToken;
+  const res = await fetch(`${DBX_CONTENT_API}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${t}`,
+      'Dropbox-API-Arg': JSON.stringify(dropboxApiArg),
+      'Content-Type': 'application/octet-stream',
+    },
+    body,
+  });
+  if (res.status === 401) {
+    showError('Dropbox session expired. Please reconnect.');
+    state.dbxToken = null;
+    localStorage.removeItem('dbx_token');
+    renderDbxChip();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res;
+}
+
+async function listFolder(path, cursor) {
+  if (cursor) {
+    return dbxRpc('/files/list_folder/continue', { cursor });
+  }
+  return dbxRpc('/files/list_folder', {
+    path: path === '' ? '' : path,
+    recursive: false,
+    include_media_info: false,
+    include_deleted: false,
+    include_has_explicit_shared_members: false,
+    limit: 200,
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// DROPBOX FILE BROWSER
+// ─────────────────────────────────────────────────────────
+async function openDropboxBrowser() {
+  if (!state.dbxToken) return;
+  state.dbxCurrentPath = '';
+  state.dbxCursor = null;
+  state.dbxHasMore = false;
+  document.getElementById('dbxSelectBtn').disabled = true;
+  renderDropboxBrowserModal();
+  document.getElementById('dropboxBrowserModal').classList.add('open');
+  await loadDbxFolder('');
+}
+
+async function closeDropboxBrowser(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('dropboxBrowserModal').classList.remove('open');
+}
+
+function renderBreadcrumb(path) {
+  const el = document.getElementById('dbxBreadcrumb');
+  const parts = path.split('/').filter(Boolean);
+  el.innerHTML = `<span class="breadcrumb-item" onclick="loadDbxFolder('')">Home</span>`;
+  let acc = '';
+  parts.forEach(p => {
+    acc += '/' + p;
+    el.innerHTML += `<span class="breadcrumb-sep">/</span><span class="breadcrumb-item" onclick="loadDbxFolder('${acc}')">${p}</span>`;
+  });
+}
+
+function renderDropboxBrowserModal(entries, loading) {
+  const body = document.getElementById('dbxBrowserBody');
+  if (loading) {
+    body.innerHTML = Array.from({length: 5 }, () => `
+      <div class="skeleton-row">
+        <div class="skeleton skeleton-icon"></div>
+        <div class="skeleton-text">
+          <div class="skeleton skeleton-line" style="width:60%"></div>
+          <div class="skeleton skeleton-line" style="width:40%"></div>
+        </div>
+      </div>`).join('');
+    return;
+  }
+  if (!entries || entries.length === 0) {
+    body.innerHTML = '<div class="log-empty">This folder is empty</div>';
+    return;
+  }
+  const filtered = entries.filter(e => e['.tag'] === 'folder');
+  body.innerHTML = filtered.map(e => `
+    <div class="file-row" onclick="navigateDbxFolder('${e.path_lower}')">
+      <div class="file-row-icon folder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M3 7v13a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7l-2-2H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="file-row-info">
+        <div class="file-row-name">${escHtml(e.name)}</div>
+        <div class="file-row-meta">Folder</div>
+      </div>
+      <div class="file-row-arrow">›</div>
+    </div>`).join('');
+}
+
+async function loadDbxFolder(path) {
+  state.dbxCurrentPath = path;
+  renderBreadcrumb(path);
+  renderDropboxBrowserModal(null, true);
+  document.getElementById('dbxSelectBtn').disabled = true;
+
+  try {
+    const data = await listFolder(path, null);
+    state.dbxCursor = data.cursor;
+    state.dbxHasMore = data.has_more;
+    renderDropboxBrowserModal(data.entries);
+  } catch(e) {
+    body.innerHTML = `<div class="log-empty" style="color:var(--error)">Error loading folder: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function navigateDbxFolder(path) {
+  state.dbxCurrentPath = path;
+  renderBreadcrumb(path);
+  renderDropboxBrowserModal(null, true);
+  try {
+    const data = await listFolder(path, null);
+    state.dbxCursor = data.cursor;
+    state.dbxHasMore = data.has_more;
+    renderDropboxBrowserModal(data.entries);
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+async function loadMoreDbxEntries() {
+  if (!state.dbxHasMore) return;
+  try {
+    const data = await listFolder(state.dbxCurrentPath, state.dbxCursor);
+    state.dbxCursor = data.cursor;
+    state.dbxHasMore = data.has_more;
+    // append
+    const body = document.getElementById('dbxBrowserBody');
+    const entries = body.querySelectorAll('.file-row');
+    const existingPaths = new Set(Array.from(entries).map(el => el.dataset.path));
+    const newEntries = data.entries.filter(e => !existingPaths.has(e.path_lower));
+    if (newEntries.length > 0) {
+      body.insertAdjacentHTML('beforeend', newEntries.map(e => `
+        <div class="file-row" onclick="navigateDbxFolder('${e.path_lower}')" data-path="${e.path_lower}">
+          <div class="file-row-icon folder">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 7v13a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7l-2-2H5a2 2 0 00-2 2z" stroke="currentColor" stroke-width="1.5"/></svg>
+          </div>
+          <div class="file-row-info">
+            <div class="file-row-name">${escHtml(e.name)}</div>
+            <div class="file-row-meta">Folder</div>
+          </div>
+          <div class="file-row-arrow">›</div>
+        </div>`).join(''));
+    }
+    if (!state.dbxHasMore) {
+      const lm = body.querySelector('.load-more');
+      lm?.remove();
+    }
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+function confirmDropboxFolder() {
+  const path = state.dbxCurrentPath;
+  const name = path.split('/').filter(Boolean).slice(-1)[0] || '/';
+  state.dropboxFolder = { name, path };
+  document.getElementById('dropboxFolderName').innerHTML = escHtml(name);
+  document.getElementById('dropboxFolderPath').textContent = 'Dropbox:' + path;
+  document.getElementById('dropboxFolderName').querySelector('.folder-empty')?.remove();
+  document.getElementById('clearDropboxBtn').classList.remove('hidden');
+  document.getElementById('dropboxCard').classList.add('active');
+  closeDropboxBrowser();
+  addLog('ok', path, `Selected Dropbox folder: ${path}`);
+  setSyncUI();
+}
+
+function clearDropboxFolder() {
+  state.dropboxFolder = null;
+  document.getElementById('dropboxFolderName').innerHTML = '<span class="folder-empty">No folder selected</span>';
+  document.getElementById('dropboxFolderPath').textContent = '';
+  document.getElementById('clearDropboxBtn').classList.add('hidden');
+  document.getElementById('dropboxCard').classList.remove('active');
+  setSyncUI();
+}
+
+// ─────────────────────────────────────────────────────────
+// LOCAL FOLDER (File System Access API)
+// ─────────────────────────────────────────────────────────
+async function selectLocalFolder() {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    state.localHandle = handle;
+
+    // Try to persist permission
+    if (handle.queryPermission) {
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        // ok
+      } else {
+        const req = await handle.requestPermission({ mode: 'readwrite' });
+        if (req !== 'granted') {
+          showError('Folder permission was denied. Please try again and grant access.');
+          return;
+        }
+      }
+    }
+
+    const name = handle.name;
+    state.localFolder = { name, path: handle.kind + ':' + name };
+
+    document.getElementById('localFolderName').innerHTML = escHtml(name);
+    document.getElementById('localFolderPath').textContent = 'Local folder';
+    document.getElementById('localFolderName').querySelector('.folder-empty')?.remove();
+    document.getElementById('clearLocalBtn').classList.remove('hidden');
+    document.getElementById('localCard').classList.add('active');
+    addLog('ok', null, `Selected local folder: ${name}`);
+    setSyncUI();
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      showError('Could not access folder: ' + e.message);
+    }
+  }
+}
+
+function clearLocalFolder() {
+  state.localHandle = null;
+  state.localFolder = null;
+  document.getElementById('localFolderName').innerHTML = '<span class="folder-empty">No folder selected</span>';
+  document.getElementById('localFolderPath').textContent = '';
+  document.getElementById('clearLocalBtn').classList.add('hidden');
+  document.getElementById('localCard').classList.remove('active');
+  setSyncUI();
+}
+
+// ─────────────────────────────────────────────────────────
+// FILE FILTER
+// ─────────────────────────────────────────────────────────
+function setFileFilter(val) {
+  state.fileFilter = val;
+  localStorage.setItem('fileFilter', val);
+  document.querySelectorAll('.radio-option').forEach(b => {
+    b.classList.toggle('selected', b.dataset.value === val);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// SYNC ENGINE
+// ─────────────────────────────────────────────────────────
+async function toggleSync() {
+  if (state.syncActive) {
+    stopSync();
+  } else {
+    await startSync();
+  }
+}
+
+async function startSync() {
+  if (!state.dbxToken || !state.localHandle || !state.dropboxFolder) return;
+  dismissError();
+  state.syncActive = true;
+  state.syncCount = 0;
+  document.getElementById('syncSpinner').style.display = 'block';
+  document.getElementById('syncStatusLabel').textContent = 'Scanning…';
+  setSyncUI();
+
+  await loadManifest();
+
+  try {
+    await runFullSync();
+    state.lastSyncTime = Date.now();
+    addLog('ok', null, `Sync complete — ${state.syncCount} file(s) processed`);
+    updateSyncStatus();
+  } catch(e) {
+    showError('Sync error: ' + e.message);
+    stopSync();
+    return;
+  }
+
+  // Start watching
+  startWatcher();
+  setSyncUI();
+}
+
+function stopSync() {
+  state.syncActive = false;
+  stopWatcher();
+  document.getElementById('syncSpinner').style.display = 'none';
+  setSyncUI();
+  addLog('ok', null, 'Sync stopped');
+}
+
+async function triggerManualSync() {
+  if (!state.syncActive) return;
+  document.getElementById('syncSpinner').style.display = 'block';
+  document.getElementById('syncStatusLabel').textContent = 'Syncing…';
+  try {
+    await runFullSync();
+    state.lastSyncTime = Date.now();
+    updateSyncStatus();
+  } catch(e) {
+    showError('Sync error: ' + e.message);
+  }
+  document.getElementById('syncSpinner').style.display = 'none';
+}
+
+function startWatcher() {
+  stopWatcher();
+  // Try SyncAccessHandle (new Chrome API)
+  if (state.localHandle && 'sync' in state.localHandle) {
+    startSyncAccessHandleWatcher();
+  } else {
+    // Fallback: polling every 30s
+    state.syncWatcher = setInterval(async () => {
+      try { await runFullSync(); updateSyncStatus(); }
+      catch(e) { console.warn('Watch sync error:', e); }
+    }, 30000);
+  }
+}
+
+function stopWatcher() {
+  if (state.syncWatcher) {
+    clearInterval(state.syncWatcher);
+    state.syncWatcher = null;
+  }
+}
+
+async function startSyncAccessHandleWatcher() {
+  try {
+    const syncHandle = await state.localHandle.sync();
+    const obs = await syncHandle.createFileWatcher();
+    obs.onchange = async (event) => {
+      if (!state.syncActive) return;
+      for (const record of event.target.results) {
+        if (record.type === 'modified' || record.type === 'created' || record.type === 'deleted') {
+          const path = record.path;
+          if (!matchesFilter(path)) continue;
+          try { await syncSingleFile(path); updateSyncStatus(); }
+          catch(e) { console.warn('File watch sync error:', e); }
+        }
+      }
+    };
+    obs.start();
+  } catch(e) {
+    console.warn('SyncAccessHandle not available, falling back to polling:', e);
+    state.syncWatcher = setInterval(async () => {
+      try { await runFullSync(); updateSyncStatus(); }
+      catch(e) { console.warn('Watch sync error:', e); }
+    }, 30000);
+  }
+}
+
+async function runFullSync() {
+  const dbxPath = state.dropboxFolder.path;
+
+  // 1. List all files in Dropbox folder
+  const dbxFiles = {};
+  let cursor = null;
+  let hasMore = true;
+  while (hasMore) {
+    const data = await listFolder(dbxPath, cursor);
+    for (const f of data.entries) {
+      if (f['.tag'] === 'file' && matchesFilter(f.path_lower)) {
+        dbxFiles[f.path_lower] = f;
+      }
+    }
+    cursor = data.cursor;
+    hasMore = data.has_more;
+  }
+
+  // 2. List all local files
+  const localFiles = {};
+  await enumerateLocal(state.localHandle, '', localFiles);
+
+  // 3. Build union of all paths
+  const allPaths = new Set([...Object.keys(dbxFiles), ...Object.keys(localFiles)]);
+
+  // 4. Process each path
+  for (const relPath of allPaths) {
+    if (!matchesFilter(relPath)) continue;
+
+    const dbxFile = dbxFiles[relPath];
+    const localFile = localFiles[relPath];
+
+    if (dbxFile && !localFile) {
+      // Dropbox only → download
+      await downloadFile(relPath, dbxFile);
+      state.syncCount++;
+    } else if (localFile && !dbxFile) {
+      // Local only → upload
+      await uploadFile(relPath, localFile);
+      state.syncCount++;
+    } else if (dbxFile && localFile) {
+      // Both exist → last-write-wins
+      const dbxMod = new Date(dbxFile.server_modified).getTime();
+      const localMod = localFile.modified;
+      if (dbxMod > localMod) {
+        await downloadFile(relPath, dbxFile);
+        state.syncCount++;
+      } else if (localMod > dbxMod) {
+        await uploadFile(relPath, localFile);
+        state.syncCount++;
+      } else {
+        // Same time → check hash
+        if (localFile.hash && dbxFile.content_hash && localFile.hash !== dbxFile.content_hash.slice(0,16)) {
+          await uploadFile(relPath, localFile);
+          state.syncCount++;
+        } else {
+          addLog('ok', relPath, 'Up to date');
+        }
+      }
+    }
+  }
+
+  await saveManifest();
+}
+
+async function enumerateLocal(handle, prefix, out) {
+  for await (const [name, entry] of handle.entries()) {
+    const relPath = prefix ? prefix + '/' + name : name;
+    if (entry.kind === 'directory') {
+      await enumerateLocal(entry, relPath, out);
+    } else if (entry.kind === 'file') {
+      if (!matchesFilter(relPath)) continue;
+      const f = await entry.getFile();
+      const modified = (await f.lastModified) || Date.now();
+      const hash = await fileHash(f);
+      out[relPath] = { file: f, modified, hash, size: f.size };
+    }
+  }
+}
+
+async function downloadFile(relPath, dbxFile) {
+  addLog('down', relPath, `Downloading…`);
+  try {
+    const res = await dbxContent('/files/download', {
+      path: dbxFile.path_lower,
+    }, new Blob([]));
+    const buf = await res.arrayBuffer();
+    const entry = await findLocalEntry(relPath);
+    if (entry) {
+      const writable = await entry.createWritable();
+      await writable.write(new Blob([buf], { type: dbxFile.name }));
+      await writable.close();
+    } else {
+      // Create parent dirs + file
+      const parts = relPath.split('/');
+      const fileName = parts.pop();
+      let h = state.localHandle;
+      for (const dir of parts) {
+        h = await h.getDirectoryHandle(dir, { create: true });
+      }
+      const fh = await h.getFileHandle(fileName, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(new Blob([buf]));
+      await writable.close();
+    }
+    // Update manifest
+    state.manifest[relPath] = {
+      server_modified: new Date(dbxFile.server_modified).getTime(),
+      localModified: Date.now(),
+      size: dbxFile.size,
+      hash: dbxFile.content_hash?.slice(0, 16),
+    };
+    addLog('down', relPath, `Downloaded ${dbxFile.name}`);
+  } catch(e) {
+    addLog('err', relPath, `Download failed: ${e.message}`);
+    throw e;
+  }
+}
+
+async function uploadFile(relPath, localFile) {
+  addLog('up', relPath, `Uploading…`);
+  try {
+    const buf = await localFile.file.arrayBuffer();
+    const res = await dbxContent('/files/upload', {
+      path: state.dropboxFolder.path + '/' + relPath,
+      mode: 'overwrite',
+      autorename: false,
+      mute: true,
+    }, new Blob([buf]));
+    const metadata = await res.json();
+    state.manifest[relPath] = {
+      server_modified: new Date(metadata.server_modified).getTime(),
+      localModified: localFile.modified,
+      size: localFile.size,
+      hash: localFile.hash,
+    };
+    addLog('up', relPath, `Uploaded ${relPath.split('/').pop()}`);
+  } catch(e) {
+    addLog('err', relPath, `Upload failed: ${e.message}`);
+    throw e;
+  }
+}
+
+async function syncSingleFile(relPath) {
+  // Called by file watcher — quick delta sync for one file
+  const dbxPath = state.dropboxFolder.path + '/' + relPath;
+
+  // Check if local file exists
+  let localFH = null;
+  try { localFH = await findLocalEntry(relPath); } catch(e) { localFH = null; }
+
+  // Check if Dropbox file exists
+  let dbxFile = null;
+  try {
+    dbxFile = await dbxRpc('/files/get_metadata', { path: dbxPath });
+  } catch(e) { dbxFile = null; }
+
+  if (localFH && !dbxFile) {
+    // Local → upload
+    const f = await localFH.getFile();
+    const modified = await f.lastModified;
+    const hash = await fileHash(f);
+    await uploadFile(relPath, { file: f, modified, hash, size: f.size });
+  } else if (dbxFile && !localFH) {
+    // Dropbox → download
+    await downloadFile(relPath, dbxFile);
+  } else if (dbxFile && localFH) {
+    const f = await localFH.getFile();
+    const localModified = await f.lastModified;
+    const dbxMod = new Date(dbxFile.server_modified).getTime();
+    if (dbxMod > localModified) {
+      await downloadFile(relPath, dbxFile);
+    } else if (localModified > dbxMod) {
+      const hash = await fileHash(f);
+      await uploadFile(relPath, { file: f, modified: localModified, hash, size: f.size });
+    }
+  }
+
+  await saveManifest();
+  state.lastSyncTime = Date.now();
+  state.syncCount++;
+}
+
+async function findLocalEntry(relPath) {
+  const parts = relPath.split('/');
+  const fileName = parts.pop();
+  let h = state.localHandle;
+  for (const dir of parts) {
+    try { h = await h.getDirectoryHandle(dir); }
+    catch(e) { return null; }
+  }
+  try { return await h.getFileHandle(fileName); }
+  catch(e) { return null; }
+}
+
+// ─────────────────────────────────────────────────────────
+// ACTIVITY LOG
+// ─────────────────────────────────────────────────────────
+function addLog(type, path, message) {
+  const entry = { id: Date.now() + Math.random(), timestamp: Date.now(), type, path, message };
+  state.logEntries.unshift(entry);
+  if (state.logEntries.length > 200) state.logEntries.pop();
+  renderLog();
+  persistLog();
+}
+
+function renderLog() {
+  const badge = document.getElementById('logBadge');
+  const scroll = document.getElementById('logScroll');
+  const empty = document.getElementById('logEmpty');
+
+  badge.textContent = state.logEntries.length;
+
+  if (state.logEntries.length === 0) {
+    empty && (empty.style.display = '');
+    return;
+  }
+  empty && (empty.style.display = 'none');
+
+  const icons = {
+    up: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    down: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12l7 7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    conflict: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M7 16l4-4-4-4M13 8h4M17 8v8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    ok: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    err: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M12 7v6M12 17h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  };
+
+  scroll.innerHTML = state.logEntries.map(e => `
+    <div class="log-entry">
+      <span class="log-icon ${e.type}">${icons[e.type] || icons.ok}</span>
+      <span class="log-time">${fmt(new Date(e.timestamp))}</span>
+      <span class="log-path" title="${escHtml(e.path || e.message)}">${escHtml(e.path || e.message)}</span>
+      <span class="log-relative">${relTime(e.timestamp)}</span>
+    </div>`).join('');
+}
+
+async function persistLog() {
+  try {
+    await dbPut('dropsync-logs', 'logs', { id: 'recent', entries: state.logEntries.slice(0, 200) });
+  } catch(e) {}
+}
+
+async function loadLog() {
+  try {
+    const data = await dbGet('dropsync-logs', 'logs', 'recent');
+    if (data && data.entries) {
+      state.logEntries = data.entries;
+      renderLog();
+    }
+  } catch(e) {}
+}
+
+function clearLog() {
+  state.logEntries = [];
+  renderLog();
+  persistLog();
+}
+
+function toggleLog() {
+  const body = document.getElementById('logBody');
+  const chev = document.getElementById('logChevron');
+  body.classList.toggle('open');
+  chev.style.transform = body.classList.contains('open') ? 'rotate(180deg)' : '';
+}
+
+// ─────────────────────────────────────────────────────────
+// SYNC STATUS
+// ─────────────────────────────────────────────────────────
+function updateSyncStatus() {
+  const label = document.getElementById('syncStatusLabel');
+  const count = document.getElementById('syncCount');
+  const spinner = document.getElementById('syncSpinner');
+  const statusLabel = document.getElementById('syncStatusLabel');
+
+  if (state.lastSyncTime) {
+    statusLabel.textContent = `Last synced ${relTime(state.lastSyncTime)}`;
+  }
+  if (count) {
+    count.textContent = state.syncCount > 0 ? `${state.syncCount} file(s)` : '';
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────────────────
+// SERVICE WORKER
+// ─────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(e => {
+      console.warn('SW registration failed:', e);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// DROPBOX APP KEY SETUP
+// ─────────────────────────────────────────────────────────
+function getDbxAppKey() {
+  return localStorage.getItem('dbx_app_key') || DBX_APP_KEY;
+}
+
+function promptDbxAppKey() {
+  const saved = localStorage.getItem('dbx_app_key');
+  const key = prompt(
+    'Enter your Dropbox App Key.\n\n' +
+    'To get one:\n' +
+    '1. Go to https://www.dropbox.com/developers/create\n' +
+    '2. Create an app (Scoped Access, Full Dropbox)\n' +
+    '3. In the app settings, add this URL to OAuth2 redirect URIs:\n' +
+    '   ' + DBX_REDIRECT_URI + '\n' +
+    '4. Copy the App Key and paste it below.',
+    saved || ''
+  );
+  if (key && key.trim()) {
+    localStorage.setItem('dbx_app_key', key.trim());
+    return key.trim();
+  }
+  return saved || DBX_APP_KEY;
+}
+
+// Patch startDbxAuth to use configured key
+const _origStartDbxAuth = startDbxAuth;
+startDbxAuth = async function() {
+  const appKey = getDbxAppKey();
+  if (appKey === 'YOUR_DROPBOX_APP_KEY' || !appKey) {
+    const key = promptDbxAppKey();
+    if (!key || key === 'YOUR_DROPBOX_APP_KEY') {
+      showError('A Dropbox App Key is required. See the prompt for setup instructions.');
+      return;
+    }
+  }
+  const { verifier, challenge } = await genPKCE();
+  sessionStorage.setItem('pkce_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id: getDbxAppKey(),
+    response_type: 'code',
+    redirect_uri: DBX_REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    token_access_type: 'offline',
+  });
+  window.location.href = `${DBX_AUTH_URL}?${params}`;
+};
+
+// ─────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────
+async function init() {
+  // Restore Dropbox token
+  const savedToken = localStorage.getItem('dbx_token');
+  if (savedToken) {
+    state.dbxToken = savedToken;
+    document.getElementById('dbxSpinner').classList.remove('hidden');
+    await fetchDbxAccount();
+    document.getElementById('dbxSpinner').classList.add('hidden');
+  }
+
+  // Restore file filter
+  const savedFilter = localStorage.getItem('fileFilter');
+  if (savedFilter) setFileFilter(savedFilter);
+
+  // Restore log
+  await loadLog();
+
+  // Check for OAuth callback
+  await handleDbxCallback();
+
+  // Restore last sync time display
+  updateSyncStatus();
+
+  setSyncUI();
+}
+
+init();
+</script>
+
+</body>
+</html>
