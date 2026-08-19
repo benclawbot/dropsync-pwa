@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/dropsync-banner.svg" alt="DropSync PWA" width="100%" />
+</p>
+
 # DropSync PWA
 
 **2-way sync** between a local folder on your Android phone and a Dropbox folder. No server, no account, no monthly fee. Everything runs in your browser.
